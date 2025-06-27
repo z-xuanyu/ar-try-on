@@ -11,7 +11,7 @@ import rawPlugin from "vite-plugin-raw";
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  // base: '/ar-try',
+  base: '/ar-try',
   plugins: [
     vue({
       template: {

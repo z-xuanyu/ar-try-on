@@ -17,6 +17,8 @@ const camera = new THREE.PerspectiveCamera(
 );
 let glasses;
 let gui;
+let lastZ = 0.08; // 初始z
+const SMOOTH_FACTOR = 0.15; // 越小越平滑
 const renderer = new THREE.WebGLRenderer();
 const videoTexture = ref(null);
 const videoMesh = ref(null);
@@ -27,14 +29,14 @@ const videoWidth = ref(0);
 const videoHeight = ref(0);
 
 let lastUpdate = 0;
-const UPDATE_INTERVAL = 200; // ms
+const UPDATE_INTERVAL = 20; // ms
 
 // 加载眼镜模型0.
 async function loadGlassesModel() {
   const loader = new GLTFLoader();
-  const gltf = await loader.loadAsync('/black_glasses.glb');
+  const gltf = await loader.loadAsync('https://nestshop.oss-cn-shenzhen.aliyuncs.com/black_glasses.glb');
   glasses = gltf.scene;
-  glasses.scale.set(0.14, 0.14, 0.14); // 调整大小
+  glasses.scale.set(0.12, 0.12, 0.12); // 调整大小
   glasses.position.set(0, 0, 0.08); // 初始位置
   scene.add(glasses);
 
@@ -93,7 +95,7 @@ const initThreeJS = () => {
 // 初始哈相机
 const initCameraStream = () => {
   // 是否移动端
-  const isMobileDevice = false;
+  const isMobileDevice = true;
   const constraints = {
     video: {
       // aspectRatio: window.innerWidth / window.innerHeight, // 设置视频的宽高比
@@ -164,47 +166,30 @@ function averagePoints(points) {
 const onResult = (landmarks, angleData) => {
   angle.value = JSON.stringify(angleData);
   if (!glasses) return;
-  const now = Date.now();
-  if (now - lastUpdate < UPDATE_INTERVAL) return;
-  lastUpdate = now;
-
-  // 1. 计算人脸宽度
-  const jaw = landmarks.getJawOutline();
-  const leftJaw = jaw[0];
-  const rightJaw = jaw[16];
-  const faceWidthPx = Math.abs(rightJaw.x - leftJaw.x);
-  // 2. 转为世界坐标宽度
-  const faceWorld = pixelToWorldSize(faceWidthPx, faceWidthPx, camera, renderer);
-  const glassesWidth = faceWorld.width;
-
-  // 取两个眼角中心作为眼镜中心
-  const rightEye = landmarks.getRightEye();
-  const leftEye = landmarks.getLeftEye();
-  const center = averagePoints(leftEye.concat(rightEye));
+  //鼻子点
+  const nose = landmarks?.getNose();
   const records = pixelToSceneCoords(
-    center?.x,
-    center?.y,
+    nose[0]?.x,
+    nose[0]?.y,
     camera,
     renderer.domElement,
     scene
   );
+  glasses.position.x = records.x;
+  // glasses.position.y = records.y;
 
-  // 3. 设置眼镜缩放
-  const scale = glassesWidth / 1.6; // 1.6 可调;
-  console.log(scale, 'scale');
-  glasses.scale.set(scale, scale, scale);
-
-
-  glasses.position.set(records.x, records.y);
-
+  // 计算目标z（可根据人脸大小或直接用固定值）
+  // let targetZ = 0.08; // 你可以根据实际需求动态计算
+  // // 平滑z
+  // lastZ = lastZ + (targetZ - lastZ) * SMOOTH_FACTOR;
+  // glasses.position.z = lastZ;
   // 直接用angleData的yaw、pitch、roll
   // 假设angleData单位为度，需转为弧度
   const yaw = THREE.MathUtils.degToRad(angleData?.yaw || 0);
+  console.log(yaw, 'yaw');
   const pitch = THREE.MathUtils.degToRad(angleData?.pitch || 0);
   const roll = THREE.MathUtils.degToRad(angleData?.roll || 0);
-
-  // three.js欧拉角顺序为XYZ
-  // glasses.rotation.set(pitch, yaw, roll);
+  glasses.rotation.y = -yaw / 3;
 };
 
 // face-api
@@ -237,7 +222,7 @@ onMounted(async () => {
 <template>
   <div class="w-screen h-screen">
     <video ref="video" class="fixed top-0 bottom-0 left-0 right-0 hidden object-cover w-full h-full" autoplay
-      webkit-playsinline playsinline x5-playsinline></video>
+      webkit-playsinline playsinline x5-playsinline style="transform: scaleX(-1)"></video>
     <div ref="sceneContainer" class="fixed top-0 bottom-0 left-0 right-0 z-10"></div>
     <div class="fixed z-20 font-bold text-red-500 top-20">
       <p>video.width: {{ videoWidth }}</p>

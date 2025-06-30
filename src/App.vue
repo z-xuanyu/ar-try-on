@@ -36,8 +36,8 @@ async function loadGlassesModel() {
   const gltf = await loader.loadAsync('https://nestshop.oss-cn-shenzhen.aliyuncs.com/black_glasses.glb');
   glasses = gltf.scene;
   scene.add(glasses);
-  glasses.position.z = 0.2;
-  glasses.scale.set(0.15, 0.15, 0.15);
+  glasses.position.z = 0.5;
+  glasses.scale.setScalar(0.12);
   // 添加 GUI
   gui = new GUI();
   if (glasses) {
@@ -56,7 +56,7 @@ async function loadGlassesModel() {
     gui.add(params, 'rotX', -Math.PI, Math.PI).onChange(v => glasses.rotation.x = v);
     gui.add(params, 'rotY', -Math.PI, Math.PI).onChange(v => glasses.rotation.y = v);
     gui.add(params, 'rotZ', -Math.PI, Math.PI).onChange(v => glasses.rotation.z = v);
-    gui.add(params, 'scale', 0.01, 1).onChange(v => glasses.scale.set(v, v, v));
+    gui.add(params, 'scale', 0.01, 1).onChange(v => glasses.scale.setScalar(v));
   }
 }
 
@@ -163,6 +163,9 @@ const onResult = (landmarks, angleData) => {
   if (!glasses) return;
   // 鼻子点
   const nose = landmarks?.getNose();
+  const jawOutline = landmarks?.getJawOutline();
+  const leftJawNearEye = jawOutline[2];
+  const rightJawNearEye = jawOutline[14];
   // 镜像鼻子点x
   const mirroredNoseX = videoWidth.value - nose[0]?.x;
   const records = pixelToSceneCoords(
@@ -172,39 +175,20 @@ const onResult = (landmarks, angleData) => {
     renderer.domElement,
     scene
   );
-  glasses.position.set(records.x, records.y, records.z);
-
-
-  // --- 新增：渲染特征点 ---
-  // 先清空 group
-  // while (landmarkGroup.children.length > 0) {
-  //   const obj = landmarkGroup.children[0];
-  //   if (obj.geometry) obj.geometry.dispose();
-  //   if (obj.material) obj.material.dispose();
-  //   landmarkGroup.remove(obj);
-  // }
-  // // 遍历所有特征点
-  // if (landmarks && landmarks.positions) {
-  //   landmarks.positions.forEach(pt => {
-  //     // 镜像x
-  //     const mirroredX = videoWidth.value - pt.x;
-  //     const pos3d = pixelToSceneCoords(mirroredX, pt.y, camera, renderer.domElement, scene);
-  //     if (pos3d) {
-  //       const sphere = new THREE.Mesh(
-  //         new THREE.SphereGeometry(0.005, 8, 8),
-  //         new THREE.MeshBasicMaterial({ color: 0xff0000 })
-  //       );
-  //       sphere.position.copy(pos3d);
-  //       landmarkGroup.add(sphere);
-  //     }
-  //   });
-  // }
-  // --- end ---
-
-  const yaw = THREE.MathUtils.degToRad(angleData?.yaw || 0);
-  // const pitch = THREE.MathUtils.degToRad(angleData?.pitch || 0);
-  // const roll = THREE.MathUtils.degToRad(angleData?.roll || 0);
-  glasses.rotation.y = yaw / 3;
+  console.log(nose, 'records')
+  glasses.position.set(records.x, records.y, 0.5);
+  // 眼镜缩放
+  const glassesWidth = Math.abs(rightJawNearEye?.x - leftJawNearEye?.x);
+  const glassesPlane = pixelToWorldSize(
+    glassesWidth,
+    glassesWidth,
+    camera,
+    renderer
+  );
+  glasses.scale.setScalar(glassesPlane.width * 0.6);
+  // 镜片旋转
+  const { yaw, pitch, roll  } =  angleData;
+  glasses.rotation.y = yaw / 150;
 };
 
 // face-api
@@ -236,8 +220,8 @@ onMounted(async () => {
 
 <template>
   <div class="w-screen h-screen">
-    <video ref="video" class="fixed top-0 bottom-0 left-0 right-0 hidden w-full h-full" autoplay
-      webkit-playsinline playsinline x5-playsinline style="transform: scaleX(-1)"></video>
+    <video ref="video" class="fixed top-0 bottom-0 left-0 right-0 hidden w-full h-full" autoplay webkit-playsinline
+      playsinline x5-playsinline style="transform: scaleX(-1)"></video>
     <div ref="sceneContainer" class="fixed top-0 bottom-0 left-0 right-0 z-10"></div>
     <div class="fixed z-20 font-bold text-red-500 top-20">
       <p>video.width: {{ videoWidth }}</p>

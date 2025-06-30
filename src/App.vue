@@ -17,9 +17,7 @@ const camera = new THREE.PerspectiveCamera(
 );
 let glasses;
 let gui;
-let lastZ = 0.08; // 初始z
-const SMOOTH_FACTOR = 0.15; // 越小越平滑
-const renderer = new THREE.WebGLRenderer();
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 const videoTexture = ref(null);
 const videoMesh = ref(null);
 const video = ref(null);
@@ -28,18 +26,18 @@ const angle = ref(null)
 const videoWidth = ref(0);
 const videoHeight = ref(0);
 
-let lastUpdate = 0;
-const UPDATE_INTERVAL = 20; // ms
+// 新增：用于存放特征点小球的 group
+let landmarkGroup = new THREE.Group();
+scene.add(landmarkGroup);
 
-// 加载眼镜模型0.
+// 加载眼镜模型
 async function loadGlassesModel() {
   const loader = new GLTFLoader();
   const gltf = await loader.loadAsync('https://nestshop.oss-cn-shenzhen.aliyuncs.com/black_glasses.glb');
   glasses = gltf.scene;
-  glasses.scale.set(0.12, 0.12, 0.12); // 调整大小
-  glasses.position.set(0, 0, 0.08); // 初始位置
   scene.add(glasses);
-
+  glasses.position.z = 0.2;
+  glasses.scale.set(0.15, 0.15, 0.15);
   // 添加 GUI
   gui = new GUI();
   if (glasses) {
@@ -61,34 +59,33 @@ async function loadGlassesModel() {
     gui.add(params, 'scale', 0.01, 1).onChange(v => glasses.scale.set(v, v, v));
   }
 }
+
+const animate = () => {
+  if (videoTexture.value) {
+    videoTexture.value.needsUpdate = true;
+  }
+  // 检测人脸
+  faceapi
+    .detectAllFaces(video.value, optionsSSDMobileNet)
+    .withFaceLandmarks()
+    .withFaceExpressions()
+    .withFaceDescriptors()
+    .then((res) => {
+      const landmarks = res[0]?.landmarks;
+      // 角度
+      const angle = res[0]?.angle;
+      onResult(landmarks, angle);
+    });
+  renderer.render(scene, camera);
+};
+
 // 初始化场景
 const initThreeJS = () => {
   camera.position.z = 1;
   renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setAnimationLoop(animate);
   // 将渲染器DOM元素添加到页面
   sceneContainer.value.appendChild(renderer?.domElement);
-  // 动画循环
-  const animate = () => {
-    requestAnimationFrame(animate);
-    // // 如果 videoTexture 已经创建好，更新它
-    if (videoTexture.value) {
-      videoTexture.value.needsUpdate = true;
-    }
-    // 检测人脸
-    faceapi
-      .detectAllFaces(video.value, optionsSSDMobileNet)
-      .withFaceLandmarks()
-      .withFaceExpressions()
-      .withFaceDescriptors()
-      .then((res) => {
-        const landmarks = res[0]?.landmarks;
-        // 角度
-        const angle = res[0]?.angle;
-        onResult(landmarks, angle);
-      });
-    renderer.render(scene, camera);
-  };
-  animate();
   loadGlassesModel();
 };
 
@@ -139,6 +136,7 @@ const initCameraStream = () => {
         // 创建一个使用 videoTexture 的材质
         const material = new THREE.MeshBasicMaterial({
           map: videoTexture.value,
+          color: 0xf5f5f5,
           transparent: true,
           name: "video",
           lightMap: videoTexture.value,
@@ -149,6 +147,7 @@ const initCameraStream = () => {
         mesh.name = "video";
         // 将网格对象添加到场景中
         scene.add(mesh);
+        mesh.scale.x = -1;
         mesh.position.set(0, 0, 0); // 将平面放置在相机前方
         videoMesh.value = mesh;
       });
@@ -158,38 +157,54 @@ const initCameraStream = () => {
     });
 };
 
-function averagePoints(points) {
-  const sum = points.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 })
-  return { x: sum.x / points.length, y: sum.y / points.length }
-}
 // 识别结果
 const onResult = (landmarks, angleData) => {
   angle.value = JSON.stringify(angleData);
   if (!glasses) return;
-  //鼻子点
+  // 鼻子点
   const nose = landmarks?.getNose();
+  // 镜像鼻子点x
+  const mirroredNoseX = videoWidth.value - nose[0]?.x;
   const records = pixelToSceneCoords(
-    nose[0]?.x,
+    mirroredNoseX,
     nose[0]?.y,
     camera,
     renderer.domElement,
     scene
   );
-  glasses.position.x = records.x;
-  // glasses.position.y = records.y;
+  glasses.position.set(records.x, records.y, records.z);
 
-  // 计算目标z（可根据人脸大小或直接用固定值）
-  // let targetZ = 0.08; // 你可以根据实际需求动态计算
-  // // 平滑z
-  // lastZ = lastZ + (targetZ - lastZ) * SMOOTH_FACTOR;
-  // glasses.position.z = lastZ;
-  // 直接用angleData的yaw、pitch、roll
-  // 假设angleData单位为度，需转为弧度
+
+  // --- 新增：渲染特征点 ---
+  // 先清空 group
+  // while (landmarkGroup.children.length > 0) {
+  //   const obj = landmarkGroup.children[0];
+  //   if (obj.geometry) obj.geometry.dispose();
+  //   if (obj.material) obj.material.dispose();
+  //   landmarkGroup.remove(obj);
+  // }
+  // // 遍历所有特征点
+  // if (landmarks && landmarks.positions) {
+  //   landmarks.positions.forEach(pt => {
+  //     // 镜像x
+  //     const mirroredX = videoWidth.value - pt.x;
+  //     const pos3d = pixelToSceneCoords(mirroredX, pt.y, camera, renderer.domElement, scene);
+  //     if (pos3d) {
+  //       const sphere = new THREE.Mesh(
+  //         new THREE.SphereGeometry(0.005, 8, 8),
+  //         new THREE.MeshBasicMaterial({ color: 0xff0000 })
+  //       );
+  //       sphere.position.copy(pos3d);
+  //       landmarkGroup.add(sphere);
+  //     }
+  //   });
+  // }
+  // --- end ---
+
   const yaw = THREE.MathUtils.degToRad(angleData?.yaw || 0);
-  console.log(yaw, 'yaw');
-  const pitch = THREE.MathUtils.degToRad(angleData?.pitch || 0);
-  const roll = THREE.MathUtils.degToRad(angleData?.roll || 0);
-  glasses.rotation.y = -yaw / 3;
+  // const pitch = THREE.MathUtils.degToRad(angleData?.pitch || 0);
+  // const roll = THREE.MathUtils.degToRad(angleData?.roll || 0);
+  glasses.rotation.y = yaw / 3;
 };
 
 // face-api
@@ -221,7 +236,7 @@ onMounted(async () => {
 
 <template>
   <div class="w-screen h-screen">
-    <video ref="video" class="fixed top-0 bottom-0 left-0 right-0 hidden object-cover w-full h-full" autoplay
+    <video ref="video" class="fixed top-0 bottom-0 left-0 right-0 hidden w-full h-full" autoplay
       webkit-playsinline playsinline x5-playsinline style="transform: scaleX(-1)"></video>
     <div ref="sceneContainer" class="fixed top-0 bottom-0 left-0 right-0 z-10"></div>
     <div class="fixed z-20 font-bold text-red-500 top-20">

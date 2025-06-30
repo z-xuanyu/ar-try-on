@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@vitejs/plugin-basic-ssl": "^2.0.0",
     "@vladmandic/face-api": "^1.7.15",
     "lil-gui": "^0.20.0",
     "three": "^0.169.0",

@@ -8,10 +8,14 @@
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import rawPlugin from "vite-plugin-raw";
+import basicSsl from '@vitejs/plugin-basic-ssl'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  base: '/ar-try',
+  // base: '/ar-try',
+  // server: {
+  //   https: true
+  // },
   plugins: [
     vue({
       template: {
@@ -20,6 +24,7 @@ export default defineConfig({
         },
       },
     }),
+    basicSsl(),
     rawPlugin({
       match: /\.(obj|mtl)$/,
     }),
